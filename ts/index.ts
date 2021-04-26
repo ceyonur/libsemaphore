@@ -2,7 +2,7 @@ import * as snarkjs from 'snarkjs'
 import * as circomlib from 'circomlib'
 import * as crypto from 'crypto'
 import * as ethers from 'ethers'
-import { convertWitness, prove, beBuff2int } from './utils' 
+import { convertWitness, prove, beBuff2int } from './utils'
 import { storage, hashers, tree } from 'semaphore-merkle-tree'
 const MemStorage = storage.MemStorage
 const MerkleTree = tree.MerkleTree
@@ -201,6 +201,15 @@ const genMixerSignal = (
     )
 }
 
+const genVoterSignal = (
+    vote: Number | snarkjs.utils.BigNumber,
+): string => {
+    return ethers.utils.solidityKeccak256(
+        ['uint256'],
+        [vote.toString()],
+    )
+}
+
 const keccak256HexToBigInt = (
     signal: string,
 ): SnarkBigInt => {
@@ -244,6 +253,30 @@ const genWitness = (
         },
     )
 }
+
+const genVoteWitness = (
+    vote: Number | number | SnarkBigInt,
+    circuit: SnarkCircuit,
+    identity: Identity,
+    idCommitments: SnarkBigInt[] | BigInt[] | ethers.utils.BigNumber[],
+    treeDepth: number,
+    externalNullifier: SnarkBigInt,
+): Promise<WitnessData> => {
+
+    const signal = genVoterSignal(
+        vote
+    )
+    return _genWitness(
+        signal,
+        circuit,
+        identity,
+        idCommitments,
+        treeDepth,
+        externalNullifier,
+        (x) => x,
+    )
+}
+
 
 const genMixerWitness = (
     circuit: SnarkCircuit,
@@ -303,9 +336,9 @@ const _genWitness = async (
     const { signature, msg } = genSignedMsg(
         identity.keypair.privKey,
         externalNullifier,
-        signalHash, 
+        signalHash,
     )
-   
+
     const witness = circuit.calculateWitness({
         'identity_pk[0]': identity.keypair.pubKey[0],
         'identity_pk[1]': identity.keypair.pubKey[1],
@@ -391,7 +424,7 @@ const formatForVerifierContract = (
 
     return {
         a: [ proof.pi_a[0].toString(), proof.pi_a[1].toString() ],
-        b: [ 
+        b: [
             [ proof.pi_b[0][1].toString(), proof.pi_b[0][0].toString() ],
             [ proof.pi_b[1][1].toString(), proof.pi_b[1][0].toString() ],
         ],
@@ -445,6 +478,30 @@ const genBroadcastSignalParams = (
     }
 }
 
+const genVoteSignalParams = (
+    witnessData: WitnessData,
+    proof: SnarkProof,
+    publicSignals: SnarkPublicSignals,
+) => {
+    const formatted = formatForVerifierContract(proof, publicSignals)
+
+    return {
+        signal: witnessData.signal,
+        proof: [
+            ...formatted.a,
+            ...formatted.b[0],
+            ...formatted.b[1],
+            ...formatted.c,
+        ],
+        root: formatted.input[0],
+        nullifiersHash: formatted.input[1],
+        // The signal hash (formatted.input[2]) isn't passed to broadcastSignal
+        // as the contract will generate (and then verify) it
+        externalNullifier: formatted.input[3],
+    }
+}
+
+
 export {
     Identity,
     EddsaKeyPair,
@@ -463,6 +520,8 @@ export {
     genPubKey,
     genIdentity,
     genWitness,
+    genVoteWitness,
+    genVoterSignal,
     genMixerSignal,
     genMixerWitness,
     genProof,
@@ -481,5 +540,6 @@ export {
     unSerialiseIdentity,
     genExternalNullifier,
     genBroadcastSignalParams,
+    genVoteSignalParams,
     genSignalHash,
 }
