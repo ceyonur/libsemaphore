@@ -210,6 +210,22 @@ const genVoterSignal = (
     )
 }
 
+const passwordToSalt = (
+    password: string
+): string => {
+    return ethers.utils.formatBytes32String(password)
+}
+
+const genPrivateVoterSignal = (
+    vote: Number | snarkjs.utils.BigNumber,
+    password: string
+): string => {
+    return ethers.utils.solidityKeccak256(
+        ['uint256','bytes32'],
+        [vote.toString(), passwordToSalt(password)],
+    )
+}
+
 const keccak256HexToBigInt = (
     signal: string,
 ): SnarkBigInt => {
@@ -252,6 +268,31 @@ const genWitness = (
             )
         },
     )
+}
+
+const genPrivateVoteWitness = async (
+    vote: Number | number | SnarkBigInt,
+    password: string,
+    circuit: SnarkCircuit,
+    identity: Identity,
+    idCommitments: SnarkBigInt[] | BigInt[] | ethers.utils.BigNumber[],
+    treeDepth: number,
+    externalNullifier: SnarkBigInt,
+): Promise<WitnessData> => {
+    const signal = genPrivateVoterSignal(
+        vote,
+        password
+    )
+    let result = _genWitness(
+        signal,
+        circuit,
+        identity,
+        idCommitments,
+        treeDepth,
+        externalNullifier,
+        (x) => x,
+    )
+    return result
 }
 
 const genVoteWitness = (
@@ -522,6 +563,9 @@ export {
     genWitness,
     genVoteWitness,
     genVoterSignal,
+    genPrivateVoterSignal,
+    genPrivateVoteWitness,
+    passwordToSalt,
     genMixerSignal,
     genMixerWitness,
     genProof,
