@@ -31,6 +31,18 @@ interface WitnessData {
     identityPathElements: any,
 }
 
+interface EffWitnessData {
+    witness: any,
+    signal: string,
+    signalHash: SnarkBigInt,
+    signature: EdDSASignature,
+    msg: SnarkBigInt,
+    tree: tree.MerkleTree,
+    identityPathIndex: any,
+    identityPathElements: any,
+}
+
+
 interface EddsaKeyPair {
     pubKey: EddsaPublicKey,
     privKey: EddsaPrivateKey,
@@ -96,6 +108,19 @@ const genIdentity = (
         keypair: genEddsaKeyPair(privKey),
         identityNullifier: snarkjs.bigInt.leBuff2int(genRandomBuffer(31)),
         identityTrapdoor: snarkjs.bigInt.leBuff2int(genRandomBuffer(31)),
+    }
+}
+
+const genStaticIdentity = (
+    number: number,
+): Identity => {
+    const privKey = Buffer.alloc(32, number);
+    // The identity nullifier and identity trapdoor are separate random 31-byte
+    // values
+    return {
+        keypair: genEddsaKeyPair(privKey),
+        identityNullifier: snarkjs.bigInt(number.toString()),
+        identityTrapdoor: snarkjs.bigInt(number.toString()),
     }
 }
 
@@ -295,6 +320,31 @@ const genPrivateVoteWitness = async (
     return result
 }
 
+const genPrivateVoteWitnessEff = async (
+    vote: Number | number | SnarkBigInt,
+    password: string,
+    circuit: SnarkCircuit,
+    identity: Identity,
+    identityPathElements: any,
+    identityPathIndex: any,
+    externalNullifier: SnarkBigInt,
+): Promise<EffWitnessData> => {
+    const signal = genPrivateVoterSignal(
+        vote,
+        password
+    )
+    let result = _genWitnessEff(
+        signal,
+        circuit,
+        identity,
+        identityPathElements,
+        identityPathIndex,
+        externalNullifier,
+        (x) => x,
+    )
+    return result
+}
+
 const genVoteWitness = (
     vote: Number | number | SnarkBigInt,
     circuit: SnarkCircuit,
@@ -403,6 +453,52 @@ const _genWitness = async (
         msg,
         tree,
         identityPath,
+        identityPathIndex,
+        identityPathElements,
+    }
+}
+
+const _genWitnessEff = async (
+    signal: string,
+    circuit: SnarkCircuit,
+    identity: Identity,
+    identityPathElements: any,
+    identityPathIndex: any,
+    externalNullifier: SnarkBigInt,
+    transformSignalToHex: (x: string) => string,
+): Promise<EffWitnessData> => {
+
+
+    const signalHash = keccak256HexToBigInt(transformSignalToHex(signal))
+
+    const { signature, msg } = genSignedMsg(
+        identity.keypair.privKey,
+        externalNullifier,
+        signalHash,
+    )
+
+    const witness = circuit.calculateWitness({
+        'identity_pk[0]': identity.keypair.pubKey[0],
+        'identity_pk[1]': identity.keypair.pubKey[1],
+        'auth_sig_r[0]': signature.R8[0],
+        'auth_sig_r[1]': signature.R8[1],
+        auth_sig_s: signature.S,
+        signal_hash: signalHash,
+        external_nullifier: externalNullifier,
+        identity_nullifier: identity.identityNullifier,
+        identity_trapdoor: identity.identityTrapdoor,
+        identity_path_elements: identityPathElements,
+        identity_path_index: identityPathIndex,
+        fake_zero: snarkjs.bigInt(0),
+    })
+
+    return {
+        witness,
+        signal,
+        signalHash,
+        signature,
+        msg,
+        tree,
         identityPathIndex,
         identityPathElements,
     }
@@ -586,4 +682,7 @@ export {
     genBroadcastSignalParams,
     genVoteSignalParams,
     genSignalHash,
+    genStaticIdentity,
+    genPathElementsAndIndex,
+    genPrivateVoteWitnessEff,
 }
